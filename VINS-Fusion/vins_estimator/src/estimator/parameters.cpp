@@ -73,6 +73,7 @@ void readParameters(std::string config_file)
     }
     fclose(fh);
 
+    // fsSettings使得配置文件可以像Python字典那样访问
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
     if(!fsSettings.isOpened())
     {
@@ -94,25 +95,32 @@ void readParameters(std::string config_file)
     if(USE_IMU)
     {
         fsSettings["imu_topic"] >> IMU_TOPIC;
+        // c_str()将std::string 类型转换成字符串类型
         printf("IMU_TOPIC: %s\n", IMU_TOPIC.c_str());
         ACC_N = fsSettings["acc_n"];
         ACC_W = fsSettings["acc_w"];
         GYR_N = fsSettings["gyr_n"];
         GYR_W = fsSettings["gyr_w"];
+        // 将G的最后一维读成配置文件中g的模长
         G.z() = fsSettings["g_norm"];
     }
 
     SOLVER_TIME = fsSettings["max_solver_time"];
     NUM_ITERATIONS = fsSettings["max_num_iterations"];
+    // 关键帧视差
     MIN_PARALLAX = fsSettings["keyframe_parallax"];
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
     fsSettings["output_path"] >> OUTPUT_FOLDER;
     VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
+    // 创建输出文件流，用于将内容写入名为VINS_RESULT_PATH指定的文件中，但又立刻把这个流关了
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
     fout.close();
 
+    //  0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.
+    //  1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
+    //  2  have no prior about extrinsic param, calibrate extrinsic param
     ESTIMATE_EXTRINSIC = fsSettings["estimate_extrinsic"];
     if (ESTIMATE_EXTRINSIC == 2)
     {
@@ -130,11 +138,13 @@ void readParameters(std::string config_file)
         }
         if (ESTIMATE_EXTRINSIC == 0)
             ROS_WARN(" fix extrinsic param ");
+            EX_CALIB_RESULT_PATH = OUTPUT_FOLDER + "/extrinsic_parameter.csv";
 
         cv::Mat cv_T;
         fsSettings["body_T_cam0"] >> cv_T;
         Eigen::Matrix4d T;
         cv::cv2eigen(cv_T, T);
+        // 从矩阵T的第零行第零列开始，去除一个3 * 3的子矩阵
         RIC.push_back(T.block<3, 3>(0, 0));
         TIC.push_back(T.block<3, 1>(0, 3));
     } 
@@ -148,7 +158,7 @@ void readParameters(std::string config_file)
         assert(0);
     }
 
-
+    // pn是config文件路径字符串最后一个'/'的索引
     int pn = config_file.find_last_of('/');
     std::string configPath = config_file.substr(0, pn);
     
@@ -174,11 +184,13 @@ void readParameters(std::string config_file)
         TIC.push_back(T.block<3, 1>(0, 3));
     }
 
+    // 自定义一些配置？？？
     INIT_DEPTH = 5.0;
     BIAS_ACC_THRESHOLD = 0.1;
     BIAS_GYR_THRESHOLD = 0.1;
 
     TD = fsSettings["td"];
+    // 是否估计相机和IMU间的时间戳偏移
     ESTIMATE_TD = fsSettings["estimate_td"];
     if (ESTIMATE_TD)
         ROS_INFO_STREAM("Unsynchronized sensors, online estimate time offset, initial td: " << TD);

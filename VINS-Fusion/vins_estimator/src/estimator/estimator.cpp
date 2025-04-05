@@ -10,10 +10,12 @@
 #include "estimator.h"
 #include "../utility/visualization.h"
 
+// 使用参数初始化列表初始化f_manager, 
 Estimator::Estimator(): f_manager{Rs}
 {
     ROS_INFO("init begins");
     initThreadFlag = false;
+    // 把accBuf、gyrBuf、featureBuff清空
     clearState();
 }
 
@@ -21,11 +23,15 @@ Estimator::~Estimator()
 {
     if (MULTIPLE_THREAD)
     {
+        // processThread 这个线程执行完成
+        // join 的作用： 让主线程等子线程先结束
+        // 为什么需要： 如果不 join，主线程结束时可能会把子线程强行终止，导致崩溃、资源未释放等问题。
         processThread.join();
         printf("join thread \n");
     }
 }
 
+// 构造estimator时所有初始化的变量都要弄清楚含义 ！！！
 void Estimator::clearState()
 {
     mProcess.lock();
@@ -36,16 +42,20 @@ void Estimator::clearState()
     while(!featureBuf.empty())
         featureBuf.pop();
 
+    // 时间戳初始化
     prevTime = -1;
     curTime = 0;
     openExEstimation = 0;
     initP = Eigen::Vector3d(0, 0, 0);
     initR = Eigen::Matrix3d::Identity();
+    // 输入图像数
     inputImageCnt = 0;
+    // 初始化初始pose的标志
     initFirstPoseFlag = false;
 
     for (int i = 0; i < WINDOW_SIZE + 1; i++)
     {
+        // 每个滑窗都有一个Rs、Ps、Vs、Bas、Bgs，一共WINDOW_SIZE + 1个
         Rs[i].setIdentity();
         Ps[i].setZero();
         Vs[i].setZero();
@@ -55,6 +65,7 @@ void Estimator::clearState()
         linear_acceleration_buf[i].clear();
         angular_velocity_buf[i].clear();
 
+        // 释放预积分指针的内存，每个pre_integration指向IntegrationBase
         if (pre_integrations[i] != nullptr)
         {
             delete pre_integrations[i];
@@ -64,6 +75,7 @@ void Estimator::clearState()
 
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
+        // 外参置零和单位矩阵化
         tic[i] = Vector3d::Zero();
         ric[i] = Matrix3d::Identity();
     }
@@ -76,8 +88,10 @@ void Estimator::clearState()
     initial_timestamp = 0;
     all_image_frame.clear();
 
+    // 暂时的一帧预积分
     if (tmp_pre_integration != nullptr)
         delete tmp_pre_integration;
+    // 最后一次边缘化
     if (last_marginalization_info != nullptr)
         delete last_marginalization_info;
 
@@ -98,17 +112,21 @@ void Estimator::setParameter()
     mProcess.lock();
     for (int i = 0; i < NUM_OF_CAM; i++)
     {
+        // TIC parameters.h中的 extern std::vector<Eigen::Vector3d> TIC; 类型变量
         tic[i] = TIC[i];
         ric[i] = RIC[i];
         cout << " exitrinsic cam " << i << endl  << ric[i] << endl << tic[i].transpose() << endl;
     }
+    // Estimator类中的类成员变量，属于FeatureManager类，将外参的旋转部分传入
     f_manager.setRic(ric);
     // FOCAL_LENGTH 在 parameter.h 中定义 const double FOCAL_LENGTH = 460.0;
+    // sqrt_info是ProjectionTwoFrameOneCamFactor静态成员变量，用于给投影误差进行加权
     ProjectionTwoFrameOneCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionTwoFrameTwoCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     ProjectionOneFrameTwoCamFactor::sqrt_info = FOCAL_LENGTH / 1.5 * Matrix2d::Identity();
     // 相机和IMU的时间偏移
     td = TD;
+    // Eigen::Vector3d
     g = G;
     // 打印[0, 0, g_norm](g_norm是config文件中的)
     cout << "set g " << g.transpose() << endl;
@@ -121,6 +139,8 @@ void Estimator::setParameter()
     if (MULTIPLE_THREAD && !initThreadFlag)
     {
         initThreadFlag = true;
+        // 创建一个子线程，线程入口函数是：Estimator::processMeasurements
+        // thread（）的参数，线程入口函数的地址，实例的地址this，this指向Estimator的实例estimator
         processThread = std::thread(&Estimator::processMeasurements, this);
     }
     mProcess.unlock();
@@ -186,6 +206,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
     if (SHOW_TRACK)
     {
         cv::Mat imgTrack = featureTracker.getTrackImage();
+        // 发布的是/vins_estimator/image_track pub_image_track = n.advertise<sensor_msgs::Image>("image_track", 1000);
         pubTrackImage(imgTrack, t);
     }
     
@@ -194,6 +215,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
         if(inputImageCnt % 2 == 0)
         {
             mBuf.lock();
+            // 如果开启了多线程，按照相机图像数量/2的feature push到 featureBuf 里了
             featureBuf.push(make_pair(t, featureFrame));
             mBuf.unlock();
         }
@@ -201,6 +223,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
     else
     {
         mBuf.lock();
+        // 单线程，按照相机图像数量push到featureBuf
         featureBuf.push(make_pair(t, featureFrame));
         mBuf.unlock();
         TicToc processTime;
@@ -224,9 +247,11 @@ void Estimator::inputIMU(double t, const Vector3d &linearAcceleration, const Vec
     if (solver_flag == NON_LINEAR)
     {
         mPropagate.lock();
-        // 使用IMU积分更新一下最新状态latest_P、latest_V、latest_Q
+        // 使用IMU中值积分更新一下最新状态latest_P、latest_V、latest_Q（频率与IMU相等）
         fastPredictIMU(t, linearAcceleration, angularVelocity);
-        // 发布最新的Odometry
+        // 发布者这样定义的：pub_latest_odometry = n.advertise<nav_msgs::Odometry>("imu_propagate", 1000);
+        // rostopic list可以看到/vins_estimator/imu_propagate
+        // latest_P、latest_Q在 updateLatestStates 更新
         pubLatestOdometry(latest_P, latest_Q, latest_V, t);
         mPropagate.unlock();
     }
@@ -253,10 +278,10 @@ bool Estimator::getIMUInterval(double t0, double t1, vector<pair<double, Eigen::
     }
     //printf("get imu from %f %f\n", t0, t1);
     //printf("imu fornt time %f   imu end time %f\n", accBuf.front().first, accBuf.back().first);
-    // 如果t1的时间小于accBuf中的最新帧，则push新帧到accVector、gyrVector中
+    // 如果t1的时间小于等于accBuf中的最新帧，则push新帧到accVector、gyrVector中
     if(t1 <= accBuf.back().first)
     {
-        // 确保accBuf中的最老帧时间大于t0
+        // 确保accBuf中的最老帧时间大于t0（t0初始值是-1）
         while (accBuf.front().first <= t0)
         {
             accBuf.pop();
@@ -285,6 +310,7 @@ bool Estimator::getIMUInterval(double t0, double t1, vector<pair<double, Eigen::
 
 bool Estimator::IMUAvailable(double t)
 {
+    // accBuf非空并且当前时间小于最新imu帧时间
     if(!accBuf.empty() && t <= accBuf.back().first)
         return true;
     else
@@ -327,7 +353,7 @@ void Estimator::processMeasurements()
             mBuf.lock();
             if(USE_IMU)
                 // estimator中的prevTime和curTime, 从accBuf和gyr_Buf中填充accVector、gyrVector
-                // 作用：提取[prevTime, curTime]时间段内的accBuf和gyr_Buf的数据
+                // 作用：提取[prevTime, curTime]时间段内的accBuf和gyr_Buf的数据填充到accVector、gyrVector
                 getIMUInterval(prevTime, curTime, accVector, gyrVector);
 
             featureBuf.pop();
@@ -336,16 +362,21 @@ void Estimator::processMeasurements()
             if(USE_IMU)
             {
                 if(!initFirstPoseFlag)
-                    // 
+                    // 初始时刻accVector的size < 20, 用最开始这几帧IMU进行initFirstIMUPose，得到VIO坐标系下的第一个
+                    // 姿态R0,即Rs[0]
                     initFirstIMUPose(accVector);
+                // 遍历两个特征帧之间的imu加速度
                 for(size_t i = 0; i < accVector.size(); i++)
                 {
                     double dt;
                     if(i == 0)
+                        // 这里的 dt 是第一帧imu和prev特征的时间偏移量
                         dt = accVector[i].first - prevTime;
                     else if (i == accVector.size() - 1)
+                        // 这里的 dt 是cur特征与最后一帧imu的时间偏移量
                         dt = curTime - accVector[i - 1].first;
                     else
+                        // 这里的 dt 是相邻imu帧之间的时间偏移量
                         dt = accVector[i].first - accVector[i - 1].first;
                     // 使用预积分，处理[prevTime, curTime]间的IMU信息
                     processIMU(accVector[i].first, dt, accVector[i].second, gyrVector[i].second);
@@ -379,7 +410,7 @@ void Estimator::processMeasurements()
     }
 }
 
-
+// 根据第一帧特征之前的imu信息进行initFirstIMUPose
 void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVector)
 {
     printf("init first imu pose\n");
@@ -395,7 +426,11 @@ void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVecto
     averAcc = averAcc / n;
     printf("averge acc %f %f %f\n", averAcc.x(), averAcc.y(), averAcc.z());
 
-    //在 [prevTime, curTime] 时间段内，计算imu坐标系和世界系的旋转
+    //在 [-1， 第一帧feature的时间戳] 时间段内，计算imu坐标系和世界系的旋转
+    // 输入一个加速度向量 averAcc，估计出将其旋转到vio世界坐标系 z 轴（0， 0， 1）的旋转矩阵；
+    // 提取出这个旋转的 yaw 分量；
+    // 构造一个反向 yaw 的旋转矩阵，把 yaw 消除，只保留 pitch 和 roll；
+    // 得到最终初始姿态 R0
     Matrix3d R0 = Utility::g2R(averAcc);
     double yaw = Utility::R2ypr(R0).x();
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
@@ -414,6 +449,7 @@ void Estimator::initFirstPose(Eigen::Vector3d p, Eigen::Matrix3d r)
 
 
 //              processIMU(accVector[i].first, dt, accVector[i].second, gyrVector[i].second);
+// input: t是一帧imu的时间戳, dt是与上一帧imu的时间间隔，
 void Estimator::processIMU(double t, double dt, const Vector3d &linear_acceleration, const Vector3d &angular_velocity)
 {
     if (!first_imu)
@@ -423,12 +459,14 @@ void Estimator::processIMU(double t, double dt, const Vector3d &linear_accelerat
         gyr_0 = angular_velocity;
     }
 
+    // pre_integrations[frame_count]非空，new出一个IntegrationBase对象
     if (!pre_integrations[frame_count])
     {
         pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
     }
     if (frame_count != 0)
     {
+        // 在push_back进行预积分，计算雅可比和预积分协方差矩阵的操作
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
             tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
@@ -1625,13 +1663,14 @@ void Estimator::fastPredictIMU(double t, Eigen::Vector3d linear_acceleration, Ei
     // 当前时间下的世界坐标系下的imu的加速度
     Eigen::Vector3d un_acc_1 = latest_Q * (linear_acceleration - latest_Ba) - g;
     Eigen::Vector3d un_acc = 0.5 * (un_acc_0 + un_acc_1);
-    // 使用IMU积分更新latest状态
+    // 使用IMU的中值积分更新latest状态，latest_P的频率与IMU相等
     latest_P = latest_P + dt * latest_V + 0.5 * dt * dt * un_acc;
     latest_V = latest_V + dt * un_acc;
     latest_acc_0 = linear_acceleration;
     latest_gyr_0 = angular_velocity;
 }
 
+// 重要：出现了好几次，说明了最新状态是如何更新的
 void Estimator::updateLatestStates()
 {
     mPropagate.lock();

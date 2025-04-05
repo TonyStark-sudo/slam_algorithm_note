@@ -350,7 +350,7 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackIm
     return featureFrame;
 }
 
-// 这部分代码注释掉了，执行了用fundmental矩阵剔除了一些无匹配
+// 这部分代码注释掉了，执行了用fundmental矩阵剔除了一些误匹配
 void FeatureTracker::rejectWithF()
 {
     if (cur_pts.size() >= 8)
@@ -390,6 +390,7 @@ void FeatureTracker::readIntrinsicParameter(const vector<string> &calib_file)
     for (size_t i = 0; i < calib_file.size(); i++)
     {
         ROS_INFO("reading paramerter of camera %s", calib_file[i].c_str());
+        // 封装好的CameraPtr类用于读相机内参
         camodocal::CameraPtr camera = CameraFactory::instance()->generateCameraFromYamlFile(calib_file[i]);
         m_camera.push_back(camera);
     }

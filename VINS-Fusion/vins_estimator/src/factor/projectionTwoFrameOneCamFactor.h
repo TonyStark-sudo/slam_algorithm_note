@@ -32,7 +32,7 @@ class ProjectionTwoFrameOneCamFactor : public ceres::SizedCostFunction<2, 7, 7, 
     double td_i, td_j;
     Eigen::Matrix<double, 2, 3> tangent_base;
 
-    // 静态成员变量在 sqrt_info Estimator::setParameter() 中初始化了
+    // 静态成员变量在 sqrt_info Estimator::setParameter() 中初始化了，用于优化器中对残差进行加权
     static Eigen::Matrix2d sqrt_info;
     static double sum_t;
 };

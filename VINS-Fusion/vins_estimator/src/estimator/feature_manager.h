@@ -110,6 +110,7 @@ class FeatureManager
 
   private:
     double compensatedParallax2(const FeaturePerId &it_per_id, int frame_count);
+    // 一个指向常量 Matrix3d 类型的指针，Rs指向的内容不能修改
     const Matrix3d *Rs;
     Matrix3d ric[2];
 };

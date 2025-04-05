@@ -79,7 +79,7 @@ cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
 }
 
 // extract images with same timestamp from two topics
-// 同步线程
+// 同步线程（可以理解成执行前端featuretracker的线程）
 void sync_process()
 {
     while(1)
@@ -126,6 +126,7 @@ void sync_process()
             std_msgs::Header header;
             double time = 0;
             m_buf.lock();
+            // 此时已经订阅到相机话题了，img0_buf不为空
             if(!img0_buf.empty())
             {
                 // img0_buf非空， 取第一帧的时间戳
@@ -141,7 +142,7 @@ void sync_process()
                 estimator.inputImage(time, image);
         }
 
-        // 当前线程暂停 2ms 
+        // 当前线程暂停 2ms （给前端featuretracker预留足够时间？？？）
         std::chrono::milliseconds dura(2);
         std::this_thread::sleep_for(dura);
     }
@@ -247,9 +248,11 @@ int main(int argc, char **argv)
     // 定义主节点句柄
     ros::NodeHandle n("~");
     // 这行代码的作用是设置 ROS 日志的默认级别为 Info，即调整 ROS 日志的输出级别，使 INFO 级别及以上的日志消息可见
+    // 这行使得ROS_DEBUG级别的消息不可见
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
-    // 命令行参数不为2，打印提示log
+    // 命令行参数不为2，打印提示log， argc是传入参数的个数，在这里：argv[0] = "vins_node" , 
+    // argv[1] = ""~/catkin_ws/src/VINS-Fusion/config/euroc/euroc_stereo_imu_config.yaml
     if(argc != 2)
     {
         printf("please intput: rosrun vins vins_node [config file] \n"
@@ -258,7 +261,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 将配置文件从命令行传入
+    // 将配置文件的path从命令行传入
     string config_file = argv[1];
     printf("config_file: %s\n", argv[1]);
 
@@ -269,6 +272,7 @@ int main(int argc, char **argv)
     estimator.setParameter();
 
     // #ifdef是条件编译指令，用于检查 EIGEN_DONT_PARALLELIZE 是否被预定义
+    // 未宏定义，表示没有禁止Eigen的并行化
 #ifdef EIGEN_DONT_PARALLELIZE
     ROS_DEBUG("EIGEN_DONT_PARALLELIZE");
 #endif
@@ -283,14 +287,16 @@ int main(int argc, char **argv)
         sub_imu = n.subscribe(IMU_TOPIC, 2000, imu_callback, ros::TransportHints().tcpNoDelay());
     }
 
-    // 另一个线程进行processMeasure发布feature，这里进行订阅
-    ros::Subscriber sub_feature = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
+    // 没有节点发布这个话题，什么也没有订阅到，可以注释掉，
+    // vins根本没有发布这个话题, 方便换新前端直接发布这个话题，这里提供了一个接口
+    // ros::Subscriber sub_feature = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
     ros::Subscriber sub_img0 = n.subscribe(IMAGE0_TOPIC, 100, img0_callback);
     ros::Subscriber sub_img1;
     if(STEREO)
     {
         sub_img1 = n.subscribe(IMAGE1_TOPIC, 100, img1_callback);
     }
+    // 订阅外部状态话题
     ros::Subscriber sub_restart = n.subscribe("/vins_restart", 100, restart_callback);
     ros::Subscriber sub_imu_switch = n.subscribe("/vins_imu_switch", 100, imu_switch_callback);
     ros::Subscriber sub_cam_switch = n.subscribe("/vins_cam_switch", 100, cam_switch_callback);

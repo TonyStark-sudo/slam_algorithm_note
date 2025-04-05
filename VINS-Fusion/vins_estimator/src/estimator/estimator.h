@@ -94,10 +94,15 @@ class Estimator
 
     std::mutex mProcess;
     std::mutex mBuf;
+    // 锁IMU中值积分
     std::mutex mPropagate;
+    // 订阅的imu传感器话题,将每一帧push到accBuf、和gyrBuf中
     queue<pair<double, Eigen::Vector3d>> accBuf;
     queue<pair<double, Eigen::Vector3d>> gyrBuf;
+
     queue<pair<double, map<int, vector<pair<int, Eigen::Matrix<double, 7, 1> > > > > > featureBuf;
+    // curTime 是指featureBuf队头特征的时间戳+td时间偏移 初始值为0
+    // prevTime 是前一个特征的时间戳+td时间偏移 初始值为-1
     double prevTime, curTime;
     bool openExEstimation;
 
@@ -135,6 +140,7 @@ class Estimator
 
     int frame_count;
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
+    // 从相机话题订阅到的相机帧的计数器（交给前端featuretracker相机帧计数器）
     int inputImageCnt;
 
     FeatureManager f_manager;
