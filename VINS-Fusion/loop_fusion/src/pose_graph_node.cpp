@@ -454,6 +454,7 @@ int main(int argc, char **argv)
     fsSettings["output_path"] >> VINS_RESULT_PATH;
     fsSettings["save_image"] >> DEBUG_IMAGE;
 
+    // 在config文件夹的配置文件，将 load_previous_pose_graph 置为1为使用先前的保存的位姿图
     LOAD_PREVIOUS_POSE_GRAPH = fsSettings["load_previous_pose_graph"];
     VINS_RESULT_PATH = VINS_RESULT_PATH + "/vio_loop.csv";
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
@@ -478,6 +479,8 @@ int main(int argc, char **argv)
         load_flag = 1;
     }
 
+    // 订阅5个 estimator 包发布的话题，以及一个相机话题
+    // 里程计话题
     ros::Subscriber sub_vio = n.subscribe("/vins_estimator/odometry", 2000, vio_callback);
     ros::Subscriber sub_image = n.subscribe(IMAGE_TOPIC, 2000, image_callback);
     ros::Subscriber sub_pose = n.subscribe("/vins_estimator/keyframe_pose", 2000, pose_callback);
@@ -485,6 +488,7 @@ int main(int argc, char **argv)
     ros::Subscriber sub_point = n.subscribe("/vins_estimator/keyframe_point", 2000, point_callback);
     ros::Subscriber sub_margin_point = n.subscribe("/vins_estimator/margin_cloud", 2000, margin_point_callback);
 
+    // 发布五个话题
     pub_match_img = n.advertise<sensor_msgs::Image>("match_image", 1000);
     pub_camera_pose_visual = n.advertise<visualization_msgs::MarkerArray>("camera_pose_visual", 1000);
     pub_point_cloud = n.advertise<sensor_msgs::PointCloud>("point_cloud_loop_rect", 1000);
