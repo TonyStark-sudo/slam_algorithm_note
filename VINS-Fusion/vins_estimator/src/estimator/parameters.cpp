@@ -79,7 +79,7 @@ void readParameters(std::string config_file)
     {
         std::cerr << "ERROR: Wrong path to settings" << std::endl;
     }
-
+    // 字符串类型变量使用流写入，整型和浮点型可以直接赋值
     fsSettings["image0_topic"] >> IMAGE0_TOPIC;
     fsSettings["image1_topic"] >> IMAGE1_TOPIC;
     MAX_CNT = fsSettings["max_cnt"];
@@ -144,7 +144,7 @@ void readParameters(std::string config_file)
         fsSettings["body_T_cam0"] >> cv_T;
         Eigen::Matrix4d T;
         cv::cv2eigen(cv_T, T);
-        // 从矩阵T的第零行第零列开始，去除一个3 * 3的子矩阵
+        // 从矩阵T的第零行第零列开始，取出个3 * 3的子矩阵
         RIC.push_back(T.block<3, 3>(0, 0));
         TIC.push_back(T.block<3, 1>(0, 3));
     } 

@@ -82,6 +82,7 @@ cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
 // 同步线程（可以理解成执行前端featuretracker的线程）
 void sync_process()
 {
+    // while（1)说明这个线程一直在运行
     while(1)
     {
         if(STEREO)
@@ -129,7 +130,7 @@ void sync_process()
             // 此时已经订阅到相机话题了，img0_buf不为空
             if(!img0_buf.empty())
             {
-                // img0_buf非空， 取第一帧的时间戳
+                // img0_buf非空， 取队列中最老的一帧的时间戳
                 time = img0_buf.front()->header.stamp.toSec();
                 header = img0_buf.front()->header;
                 image = getImageFromMsg(img0_buf.front());
@@ -250,6 +251,7 @@ int main(int argc, char **argv)
     // 这行代码的作用是设置 ROS 日志的默认级别为 Info，即调整 ROS 日志的输出级别，使 INFO 级别及以上的日志消息可见
     // 这行使得ROS_DEBUG级别的消息不可见
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
+    // ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::debug);
 
     // 命令行参数不为2，打印提示log， argc是传入参数的个数，在这里：argv[0] = "vins_node" , 
     // argv[1] = ""~/catkin_ws/src/VINS-Fusion/config/euroc/euroc_stereo_imu_config.yaml
@@ -273,6 +275,7 @@ int main(int argc, char **argv)
 
     // #ifdef是条件编译指令，用于检查 EIGEN_DONT_PARALLELIZE 是否被预定义
     // 未宏定义，表示没有禁止Eigen的并行化
+
 #ifdef EIGEN_DONT_PARALLELIZE
     ROS_DEBUG("EIGEN_DONT_PARALLELIZE");
 #endif
@@ -288,7 +291,7 @@ int main(int argc, char **argv)
     }
 
     // 没有节点发布这个话题，什么也没有订阅到，可以注释掉，
-    // vins根本没有发布这个话题, 方便换新前端直接发布这个话题，这里提供了一个接口
+    // vins根本没有发布这个话题, 方便换新前端直接发布这个话题，在这里订阅，因此提供了一个接口
     // ros::Subscriber sub_feature = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
     ros::Subscriber sub_img0 = n.subscribe(IMAGE0_TOPIC, 100, img0_callback);
     ros::Subscriber sub_img1;

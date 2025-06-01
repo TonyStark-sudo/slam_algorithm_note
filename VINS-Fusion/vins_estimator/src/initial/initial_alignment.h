@@ -25,7 +25,8 @@ class ImageFrame
 {
     public:
         ImageFrame(){};
-        ImageFrame(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>& _points, double _t):t{_t},is_key_frame{false}
+        // 图像帧的初始化参数列表
+        ImageFrame(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>& _points, double _t) : t{_t}, is_key_frame{false}
         {
             points = _points;
         };

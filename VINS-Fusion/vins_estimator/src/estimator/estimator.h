@@ -122,6 +122,7 @@ class Estimator
     Vector3d        Vs[(WINDOW_SIZE + 1)];
     // Rs是什么意思？Rs[0] = 是第一帧IMU的旋转
     Matrix3d        Rs[(WINDOW_SIZE + 1)];
+    // 滑窗中每一帧IMU的偏置
     Vector3d        Bas[(WINDOW_SIZE + 1)];
     Vector3d        Bgs[(WINDOW_SIZE + 1)];
     double td;
@@ -138,6 +139,7 @@ class Estimator
     vector<Vector3d> linear_acceleration_buf[(WINDOW_SIZE + 1)];
     vector<Vector3d> angular_velocity_buf[(WINDOW_SIZE + 1)];
 
+    // 当前滑动窗口中的第几帧
     int frame_count;
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
     // 从相机话题订阅到的相机帧的计数器（交给前端featuretracker相机帧计数器）

@@ -138,6 +138,7 @@ void Estimator::setParameter()
     // MULTIPLE_THREAD置1 和 没有初始化 线程则开启多线程, 创建Estimator::processMeasurements并执行
     if (MULTIPLE_THREAD && !initThreadFlag)
     {
+        // 确保子线程只创建一次
         initThreadFlag = true;
         // 创建一个子线程，线程入口函数是：Estimator::processMeasurements
         // thread（）的参数，线程入口函数的地址，实例的地址this，this指向Estimator的实例estimator
@@ -159,11 +160,13 @@ void Estimator::changeSensorType(int use_imu, int use_stereo)
             USE_IMU = use_imu;
             if(USE_IMU)
             {
+                // 这里提供了重启IMU的功能
                 // reuse imu; restart system
                 restart = true;
             }
             else
             {
+                // 如果关闭IMU，释放IMU相关的资源
                 if (last_marginalization_info != nullptr)
                     delete last_marginalization_info;
 
@@ -186,7 +189,7 @@ void Estimator::changeSensorType(int use_imu, int use_stereo)
 
 // Estimator类的图像数据输入接口，对图像数据进行预处理
 // parameter：
-// t: 时间戳 _img: raw_data 
+// t: 这一帧相机raw data的时间戳 _img: raw_data 
 void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
 {
     inputImageCnt++;
@@ -492,13 +495,16 @@ void Estimator::processIMU(double t, double dt, const Vector3d &linear_accelerat
 // 函数输入接口为图像特征及其时间戳
 void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, const double header)
 {
+    // ROS_DEBUG的log默认不开启，可在rosNodeTest.cpp中设置
     ROS_DEBUG("new image coming ------------------------------------------");
     ROS_DEBUG("Adding feature points %lu", image.size());
 
+    // addFeatureCheckParallax是通过视差来判断是不是关键帧
+    // 如果是关键帧，则将marginalization_flag置为MARGIN_OLD，不是关键帧否则置为MARGIN_SECOND_NEW
     if (f_manager.addFeatureCheckParallax(frame_count, image, td))
     {
         marginalization_flag = MARGIN_OLD;
-        //printf("keyframe\n");
+        // printf("keyframe\n");
     }
     else
     {
@@ -511,11 +517,17 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ROS_DEBUG("number of feature: %d", f_manager.getFeatureCount());
     Headers[frame_count] = header;
 
+    // 实例化当前feature的ImageFrame对象
     ImageFrame imageframe(image, header);
+    // 填充预积分信息
     imageframe.pre_integration = tmp_pre_integration;
+    // 就是带有时间戳的imageframe
     all_image_frame.insert(make_pair(header, imageframe));
+    // acc_0、gyr_0是在这一帧feature前面最近的一帧imu ？？？
+    // 实际上两个feature之间的IMU预积分在这里做的？？？
     tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 
+    // VINS中的标定相机与IMU外参
     if(ESTIMATE_EXTRINSIC == 2)
     {
         ROS_INFO("calibrating extrinsic param, rotation movement is needed");
