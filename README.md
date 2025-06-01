@@ -55,7 +55,7 @@ slam_algorithm_note/
 
    ```bash
    git clone https://github.com/TonyStark-sudo/slam_algorithm_note.git
-   cd annotated-slam
+   cd slam_algorithm_note
    ```
 2. 进入某个算法子目录：
    ```bash
