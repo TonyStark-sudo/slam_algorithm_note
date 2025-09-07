@@ -25,6 +25,7 @@ using namespace Eigen;
 #include "parameters.h"
 #include "../utility/tic_toc.h"
 
+// 某一帧上面的特征点归一化坐标、像素坐标、速度、时间偏移
 class FeaturePerFrame
 {
   public:
@@ -58,6 +59,7 @@ class FeaturePerFrame
     bool is_stereo;
 };
 
+// 观测到某一个特征点的所有图像
 class FeaturePerId
 {
   public:
@@ -102,6 +104,7 @@ class FeatureManager
     void removeBack();
     void removeFront(int frame_count);
     void removeOutlier(set<int> &outlierIndex);
+    // feature 是滑窗内的所有特征点
     list<FeaturePerId> feature;
     int last_track_num;
     double last_average_parallax;

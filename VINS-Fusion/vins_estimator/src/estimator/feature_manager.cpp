@@ -51,25 +51,32 @@ int FeatureManager::getFeatureCount()
 
 bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> &image, double td)
 {
+    // 打印本帧输入的特征点总数
     ROS_DEBUG("input feature: %d", (int)image.size());
-    ROS_DEBUG("num of feature: %d", getFeatureCount());
-    double parallax_sum = 0;
-    int parallax_num = 0;
-    last_track_num = 0;
-    last_average_parallax = 0;
-    new_feature_num = 0;
-    long_track_num = 0;
+    // 打印滑窗内被连续跟踪4帧及以上的特征点数
+    ROS_DEBUG("get tracked 4 frames feature: %d", getFeatureCount());
+    double parallax_sum = 0;    // 视差累加和
+    int parallax_num = 0;       // 有效视差特征数
+    last_track_num = 0;         // 本帧被持续跟踪的特征数
+    last_average_parallax = 0;  // 上一帧平均视差
+    new_feature_num = 0;        // 新增特征数
+    long_track_num = 0;         // 被跟踪4帧及以上的特征数
+
+    // 遍历本帧所有特征点
     for (auto &id_pts : image)
     {
+        // 构造本帧的特征观测
         FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
-        assert(id_pts.second[0].first == 0);
+        assert(id_pts.second[0].first == 0); // 检查左目观测
         if(id_pts.second.size() == 2)
         {
+            // 如果是双目，补充右目观测
             f_per_fra.rightObservation(id_pts.second[1].second);
-            assert(id_pts.second[1].first == 1);
+            assert(id_pts.second[1].first == 1); // 检查右目观测
         }
 
         int feature_id = id_pts.first;
+        // 查找该特征点是否已在滑窗内存在
         auto it = find_if(feature.begin(), feature.end(), [feature_id](const FeaturePerId &it)
                           {
             return it.feature_id == feature_id;
@@ -77,24 +84,26 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
 
         if (it == feature.end())
         {
+            // 新特征，加入滑窗
             feature.push_back(FeaturePerId(feature_id, frame_count));
             feature.back().feature_per_frame.push_back(f_per_fra);
             new_feature_num++;
         }
         else if (it->feature_id == feature_id)
         {
+            // 已有特征，追加观测
             it->feature_per_frame.push_back(f_per_fra);
             last_track_num++;
-            if( it-> feature_per_frame.size() >= 4)
+            if( it->feature_per_frame.size() >= 4)
                 long_track_num++;
         }
     }
 
-    //if (frame_count < 2 || last_track_num < 20)
-    //if (frame_count < 2 || last_track_num < 20 || new_feature_num > 0.5 * last_track_num)
+    // 判断特征质量是否足够，若不够直接返回 true（允许继续积累特征/跳过视差判定）
     if (frame_count < 2 || last_track_num < 20 || long_track_num < 40 || new_feature_num > 0.5 * last_track_num)
         return true;
 
+    // 计算所有在最近两帧都被观测到的特征的视差
     for (auto &it_per_id : feature)
     {
         if (it_per_id.start_frame <= frame_count - 2 &&
@@ -105,15 +114,18 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         }
     }
 
+    // 如果没有有效视差特征，返回 true
     if (parallax_num == 0)
     {
         return true;
     }
     else
     {
+        // 打印视差信息
         ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
         ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * FOCAL_LENGTH);
         last_average_parallax = parallax_sum / parallax_num * FOCAL_LENGTH;
+        // 判断平均视差是否大于阈值，决定是否可以进行后端优化/关键帧处理
         return parallax_sum / parallax_num >= MIN_PARALLAX;
     }
 }

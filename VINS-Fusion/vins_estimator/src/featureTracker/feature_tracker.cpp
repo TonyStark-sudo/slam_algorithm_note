@@ -84,7 +84,7 @@ void FeatureTracker::setMask()
             ids.push_back(it.second.second);
             track_cnt.push_back(it.first);
             // push完后，在该特征点周围设置半径为 MIN_DIST 的圆形mask区域
-            // 目的减少特征点的数量，放置特征点过于密集
+            // 目的减少特征点的数量，防止特征点过于密集
             cv::circle(mask, it.second.first, MIN_DIST, 0, -1);
         }
     }

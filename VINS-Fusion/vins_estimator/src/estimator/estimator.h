@@ -117,7 +117,8 @@ class Estimator
 
     Matrix3d ric[2];
     Vector3d tic[2];
-
+    
+    // 滑窗PVQB，滑动窗口中10 + 1帧图像帧的信息，共10段IMU预积分
     Vector3d        Ps[(WINDOW_SIZE + 1)];
     Vector3d        Vs[(WINDOW_SIZE + 1)];
     // Rs是什么意思？Rs[0] = 是第一帧IMU的旋转
@@ -139,7 +140,7 @@ class Estimator
     vector<Vector3d> linear_acceleration_buf[(WINDOW_SIZE + 1)];
     vector<Vector3d> angular_velocity_buf[(WINDOW_SIZE + 1)];
 
-    // 当前滑动窗口中的第几帧
+    // 当前滑动窗口中的第几帧，从零增到10后，一直为10
     int frame_count;
     int sum_of_outlier, sum_of_back, sum_of_front, sum_of_invalid;
     // 从相机话题订阅到的相机帧的计数器（交给前端featuretracker相机帧计数器）
@@ -158,10 +159,14 @@ class Estimator
     vector<Vector3d> key_poses;
     double initial_timestamp;
 
-
+    // ceres优化时的临时变量
+    // p、q
     double para_Pose[WINDOW_SIZE + 1][SIZE_POSE];
+    // v、ba、bg
     double para_SpeedBias[WINDOW_SIZE + 1][SIZE_SPEEDBIAS];
+    // 特征点的逆深度
     double para_Feature[NUM_OF_F][SIZE_FEATURE];
+    // camera-IMU外参
     double para_Ex_Pose[2][SIZE_POSE];
     double para_Retrive_Pose[SIZE_POSE];
     double para_Td[1][1];

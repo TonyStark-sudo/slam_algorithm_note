@@ -249,7 +249,7 @@ int main(int argc, char **argv)
     // 定义主节点句柄
     ros::NodeHandle n("~");
     // 这行代码的作用是设置 ROS 日志的默认级别为 Info，即调整 ROS 日志的输出级别，使 INFO 级别及以上的日志消息可见
-    // 这行使得ROS_DEBUG级别的消息不可见
+    // 这行使得ROS_DEBUG级别的log不可见
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
     // ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::debug);
 

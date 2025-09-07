@@ -423,6 +423,7 @@ void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVecto
     int n = (int)accVector.size();
     for(size_t i = 0; i < accVector.size(); i++)
     {
+        // imu坐标系下的平均加速度，即body系下的加速度
         averAcc = averAcc + accVector[i].second;
     }
     // 计算[prevTime, curTime]时间段内加速度平均值
@@ -430,7 +431,7 @@ void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVecto
     printf("averge acc %f %f %f\n", averAcc.x(), averAcc.y(), averAcc.z());
 
     //在 [-1， 第一帧feature的时间戳] 时间段内，计算imu坐标系和世界系的旋转
-    // 输入一个加速度向量 averAcc，估计出将其旋转到vio世界坐标系 z 轴（0， 0， 1）的旋转矩阵；
+    // 输入一个加速度向量 averAcc(认为这个量是imu系下重力的测量)，估计出将其旋转到vio世界坐标系 z 轴（0， 0， 1）的旋转矩阵；
     // 提取出这个旋转的 yaw 分量；
     // 构造一个反向 yaw 的旋转矩阵，把 yaw 消除，只保留 pitch 和 roll；
     // 得到最终初始姿态 R0
@@ -462,23 +463,32 @@ void Estimator::processIMU(double t, double dt, const Vector3d &linear_accelerat
         gyr_0 = angular_velocity;
     }
 
-    // pre_integrations[frame_count]非空，new出一个IntegrationBase对象
+    ROS_DEBUG("%f, frame_count %d, acc bias %f %f %f, gyr bias %f %f %f",t, frame_count, 
+                Bas[frame_count].x(), Bas[frame_count].y(), Bas[frame_count].z(),
+                Bgs[frame_count].x(), Bgs[frame_count].y(), Bgs[frame_count].z());
+
+    // pre_integrations[frame_count]为空，new出一个IntegrationBase对象
     if (!pre_integrations[frame_count])
     {
         pre_integrations[frame_count] = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
     }
+    // 滑窗中至少有一帧imu
     if (frame_count != 0)
     {
         // 在push_back进行预积分，计算雅可比和预积分协方差矩阵的操作
         pre_integrations[frame_count]->push_back(dt, linear_acceleration, angular_velocity);
         //if(solver_flag != NON_LINEAR)
-            tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
+            // tmp_pre_integration->push_back(dt, linear_acceleration, angular_velocity);
+            // ROS_DEBUG("%f, tmp_pre_integration acc_0: %f %f %f,tmp_pre_integration gyr_0: %f %f %f", t, 
+            //     tmp_pre_integration->acc_0.x(), tmp_pre_integration->acc_0.y(), tmp_pre_integration->acc_0.z(),
+            //     tmp_pre_integration->gyr_0.x(), tmp_pre_integration->gyr_0.y(), tmp_pre_integration->gyr_0.z());
 
         dt_buf[frame_count].push_back(dt);
         linear_acceleration_buf[frame_count].push_back(linear_acceleration);
         angular_velocity_buf[frame_count].push_back(angular_velocity);
 
         // 为什么这里进行一次IMU积分操作？？？
+        // 答：保证图像帧的状态在IMU积分的基础上更新
         int j = frame_count;         
         Vector3d un_acc_0 = Rs[j] * (acc_0 - Bas[j]) - g;
         Vector3d un_gyr = 0.5 * (gyr_0 + angular_velocity) - Bgs[j];
