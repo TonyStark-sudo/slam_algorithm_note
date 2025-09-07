@@ -239,7 +239,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
 void Estimator::inputIMU(double t, const Vector3d &linearAcceleration, const Vector3d &angularVelocity)
 {
     // 主要目的是将linearAcceleration和angularVelocity初始化到
-    // 成员函数accBuf和gyrBuf队列中
+    // Estimator的成员变量accBuf和gyrBuf队列中，对队列进行写入时要加锁
     mBuf.lock();
     accBuf.push(make_pair(t, linearAcceleration));
     gyrBuf.push(make_pair(t, angularVelocity));
@@ -365,7 +365,7 @@ void Estimator::processMeasurements()
             if(USE_IMU)
             {
                 if(!initFirstPoseFlag)
-                    // 初始时刻accVector的size < 20, 用最开始这几帧IMU进行initFirstIMUPose，得到VIO坐标系下的第一个
+                    // 初始时刻accVector的size < 20, 用最开始这几帧IMU的加速度计进行initFirstIMUPose，得到VIO坐标系下的第一个
                     // 姿态R0,即Rs[0]
                     initFirstIMUPose(accVector);
                 // 遍历两个特征帧之间的imu加速度
@@ -531,13 +531,13 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     ImageFrame imageframe(image, header);
     // 填充预积分信息
     imageframe.pre_integration = tmp_pre_integration;
-    // 就是带有时间戳的imageframe
+    // 就是带有时间戳的imageframe，插入到all_image_frame中
     all_image_frame.insert(make_pair(header, imageframe));
     // acc_0、gyr_0是在这一帧feature前面最近的一帧imu ？？？
     // 实际上两个feature之间的IMU预积分在这里做的？？？
     tmp_pre_integration = new IntegrationBase{acc_0, gyr_0, Bas[frame_count], Bgs[frame_count]};
 
-    // VINS中的标定相机与IMU外参
+    // ESTIMATE_EXTRINSIC为2，则进行VINS中的相机与IMU外参估计
     if(ESTIMATE_EXTRINSIC == 2)
     {
         ROS_INFO("calibrating extrinsic param, rotation movement is needed");
@@ -558,13 +558,14 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
 
     if (solver_flag == INITIAL)
     {
-        // monocular + IMU initilization
+        // monocular + IMU initilization 单目 + IMU初始化
         if (!STEREO && USE_IMU)
         {
+            // 等待feature帧到达滑窗size，开始初始化
             if (frame_count == WINDOW_SIZE)
             {
-                bool result = false;
-                if(ESTIMATE_EXTRINSIC != 2 && (header - initial_timestamp) > 0.1)
+                bool result = false; // 初始化成功标志位
+                if(ESTIMATE_EXTRINSIC != 2 && (header - initial_timestamp) > 0.1) // 必须得到外参才能进行初始化（自标的或者VINS估计的）
                 {
                     result = initialStructure();
                     initial_timestamp = header;   
@@ -577,6 +578,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                     slideWindow();
                     ROS_INFO("Initialization finish!");
                 }
+                // initialStructure = false时继续滑窗
                 else
                     slideWindow();
             }
@@ -641,6 +643,7 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     }
     else
     {
+        // 这里是非初始化阶段，正常进行滑窗优化
         TicToc t_solve;
         if(!USE_IMU)
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
@@ -686,12 +689,15 @@ bool Estimator::initialStructure()
 {
     TicToc t_sfm;
     //check imu observibility
+    // 主要用来判断IMU的激励是否足够，若不解注释return false，默认是关闭的
     {
         map<double, ImageFrame>::iterator frame_it;
         Vector3d sum_g;
+        // 从头开始遍历特征帧，frame_it指向了第二个元素
         for (frame_it = all_image_frame.begin(), frame_it++; frame_it != all_image_frame.end(); frame_it++)
         {
             double dt = frame_it->second.pre_integration->sum_dt;
+            // 计算两帧之间的加速度变化
             Vector3d tmp_g = frame_it->second.pre_integration->delta_v / dt;
             sum_g += tmp_g;
         }
@@ -705,11 +711,14 @@ bool Estimator::initialStructure()
             var += (tmp_g - aver_g).transpose() * (tmp_g - aver_g);
             //cout << "frame g " << tmp_g.transpose() << endl;
         }
+        // 计算当前特征帧之前的帧间IMU加速度的标准差
         var = sqrt(var / ((int)all_image_frame.size() - 1));
         //ROS_WARN("IMU variation %f!", var);
+        // 修改var这个参数可以使得增大IMU激励来进行初始化
         if(var < 0.25)
         {
             ROS_INFO("IMU excitation not enouth!");
+            // 解注释重新进行初始化？？？
             //return false;
         }
     }
