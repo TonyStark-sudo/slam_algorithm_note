@@ -26,11 +26,18 @@
 
 GlobalOptimization globalEstimator;
 ros::Publisher pub_global_odometry, pub_global_path, pub_car;
+// Path: 消息头 + Poses封装
+// Poses: PoseStamped数组
+// PoseStamped: 消息头 + 位姿
+// Pose: 位置 + 姿态
 nav_msgs::Path *global_path;
 double last_vio_t = -1;
+// NavSatFixConstPtr: NavSatFix_<...>的智能指针
+// NavSatFix_: 消息头 + 状态 + 纬度 + 经度 + 高度 + 位置协方差 + 协方差类型
 std::queue<sensor_msgs::NavSatFixConstPtr> gpsQueue;
 std::mutex m_buf;
 
+// 用于实时在Rviz中显示车辆模型
 void publish_car_model(double t, Eigen::Vector3d t_w_car, Eigen::Quaterniond q_w_car)
 {
     visualization_msgs::MarkerArray markerArray_msg;
@@ -70,6 +77,7 @@ void publish_car_model(double t, Eigen::Vector3d t_w_car, Eigen::Quaterniond q_w
     pub_car.publish(markerArray_msg);
 }
 
+// GPS消息入队
 void GPS_callback(const sensor_msgs::NavSatFixConstPtr &GPS_msg)
 {
     //printf("gps_callback! \n");
@@ -83,12 +91,14 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     //printf("vio_callback! \n");
     double t = pose_msg->header.stamp.toSec();
     last_vio_t = t;
+    // vio平移
     Eigen::Vector3d vio_t(pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.position.z);
     Eigen::Quaterniond vio_q;
     vio_q.w() = pose_msg->pose.pose.orientation.w;
     vio_q.x() = pose_msg->pose.pose.orientation.x;
     vio_q.y() = pose_msg->pose.pose.orientation.y;
     vio_q.z() = pose_msg->pose.pose.orientation.z;
+    // 取时间戳平移旋转给到globalEstimator
     globalEstimator.inputOdom(t, vio_t, vio_q);
 
 
@@ -99,13 +109,15 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
         double gps_t = GPS_msg->header.stamp.toSec();
         printf("vio t: %f, gps t: %f \n", t, gps_t);
         // 10ms sync tolerance
+        // 在t的正负10ms范围内的GPS消息认为是与该VIO消息同步的
         if(gps_t >= t - 0.01 && gps_t <= t + 0.01)
         {
-            //printf("receive GPS with timestamp %f\n", GPS_msg->header.stamp.toSec());
+            printf("receive GPS with timestamp %f\n", GPS_msg->header.stamp.toSec());
             double latitude = GPS_msg->latitude;
             double longitude = GPS_msg->longitude;
             double altitude = GPS_msg->altitude;
             //int numSats = GPS_msg->status.service;
+            // 取位置协方差的第一个元素作为定位精度
             double pos_accuracy = GPS_msg->position_covariance[0];
             if(pos_accuracy <= 0)
                 pos_accuracy = 1;
@@ -137,6 +149,7 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     odometry.pose.pose.orientation.y = global_q.y();
     odometry.pose.pose.orientation.z = global_q.z();
     odometry.pose.pose.orientation.w = global_q.w();
+    // global_Fusion发布vio再ENU下的Pose
     pub_global_odometry.publish(odometry);
     pub_global_path.publish(*global_path);
     publish_car_model(t, global_t, global_q);
@@ -162,7 +175,7 @@ int main(int argc, char **argv)
 {
     ros::init(argc, argv, "globalEstimator");
     ros::NodeHandle n("~");
-
+    // 别名引用
     global_path = &globalEstimator.global_path;
 
     ros::Subscriber sub_GPS = n.subscribe("/gps", 100, GPS_callback);
